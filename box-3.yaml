@@ -1,0 +1,23 @@
+---
+packages:
+  sounds: !include sounds.yaml
+  base: !include esp32-s3-box-3.yaml
+
+esphome:
+  name_add_mac_suffix: false
+
+api:
+  encryption:
+    key: !secret api_encrypt
+ota:
+  password: !secret api_password
+  
+wifi:
+  ssid: !secret ssid
+  password: !secret w_password
+  ap:
+    ssid: "Box-3 Fallback Hotspot"
+    password: !secret fb_password
+
+#voice_assistant:
+#  volume_multiplier: 5.0

@@ -1,0 +1,10 @@
+---
+packages:
+  base: !include box-3.yaml
+
+esphome:
+  name: orange-box-3
+  friendly_name: Orange ESP32 S3 Box 3
+
+debug:
+  update_interval: 5s  

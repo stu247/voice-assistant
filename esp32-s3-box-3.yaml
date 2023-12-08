@@ -1,0 +1,346 @@
+---
+esphome:
+  name: esp32-s3-box-3
+  friendly_name: ESP32 S3 Box 3
+  name_add_mac_suffix: true
+  platformio_options:
+    board_build.flash_mode: dio
+  project:
+    name: esphome.voice-assistant
+    version: "1.0"
+  min_version: 2023.11.5
+  on_boot:
+      priority: 600
+      then: 
+        - display.page.show: initializing_page
+        - component.update: s3_box_lcd
+        - delay: 30s
+        - if:
+            condition:
+              lambda: return id(init_in_progress);
+            then:
+              - lambda: id(init_in_progress) = false;
+              - script.execute: reset_display
+
+esp32:
+  board: esp32s3box
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_AUDIO_BOARD_CUSTOM: "y"
+      CONFIG_ESP32_S3_BOX_3_BOARD: "y"
+    components:
+      - name: esp32_s3_box_3_board
+        source: github://jesserockz/esp32-s3-box-3-board@main
+        refresh: 0s
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+external_components:
+  - source: github://pr#5230
+    components: esp_adf
+    refresh: 0s
+
+api:
+  on_client_connected:
+    - script.execute: reset_display
+  on_client_disconnected:
+    - script.execute: reset_display
+
+ota:
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+
+dashboard_import:
+  package_import_url: github://esphome/firmware/voice-assistant/esp32-s3-box-3.yaml@main
+
+wifi:
+  ap:
+  on_connect:
+    - delay: 5s # Gives time for improv results to be transmitted 
+#    - ble.disable:
+    - script.execute: reset_display        
+  on_disconnect:
+#    - ble.enable:
+    - script.execute: reset_display
+
+#improv_serial:
+
+#esp32_improv:
+#  authorizer: none
+
+button:
+  - platform: factory_reset
+    id: factory_reset_btn
+    name: Factory reset
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO1
+      inverted: true
+    name: "Mute"
+
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode: INPUT_PULLUP
+      inverted: true
+    name: Top Left Button
+    disabled_by_default: true
+    on_multi_click:
+      - timing:
+          - ON for at least 250ms
+          - OFF for at least 50ms
+        then:
+          - if:
+              condition:
+                switch.is_off: use_wake_word
+              then:
+                - if:
+                    condition: voice_assistant.is_running
+                    then:
+                      - voice_assistant.stop:
+                      - script.execute: reset_display
+                    else:
+                      - voice_assistant.start:
+              else:
+                - voice_assistant.stop:
+                - delay: 1s
+                - script.execute: reset_display
+                - script.wait: reset_display
+                - voice_assistant.start_continuous:
+      - timing:
+          - ON for at least 10s
+        then:
+          - button.press: factory_reset_btn
+
+output:
+  - platform: ledc
+    pin: GPIO47
+    id: backlight_output
+
+light:
+  - platform: monochromatic
+    id: led
+    name: LCD Backlight
+    output: backlight_output
+    restore_mode: RESTORE_DEFAULT_ON
+    default_transition_length: 250ms
+
+esp_adf:
+  board: esp32s3box3
+
+microphone:
+  - platform: esp_adf
+    id: box_mic
+
+speaker:
+  - platform: esp_adf
+    id: box_speaker
+
+voice_assistant:
+  id: va
+  microphone: box_mic
+  speaker: box_speaker
+  use_wake_word: true
+  noise_suppression_level: 2
+  auto_gain: 31dBFS
+  volume_multiplier: 2.0
+  vad_threshold: 3
+  on_listening:
+    - display.page.show: listening_page
+    - component.update: s3_box_lcd
+  on_stt_vad_end:
+    - display.page.show: thinking_page
+    - component.update: s3_box_lcd
+  on_tts_stream_start:
+    - display.page.show: replying_page
+    - component.update: s3_box_lcd
+  on_tts_stream_end:
+    - script.execute: reset_display
+  on_error:
+    - if:
+        condition:
+          lambda: return !id(init_in_progress);
+        then:  
+          - display.page.show: error_page
+          - component.update: s3_box_lcd
+          - delay: 1s
+          - script.execute: reset_display
+  on_client_connected:
+    - if:
+        condition:
+          switch.is_on: use_wake_word
+        then:
+#          - wait_until:
+#              not: ble.enabled
+          - voice_assistant.start_continuous:
+          - lambda: id(init_in_progress) = false;
+    - script.execute: reset_display
+  on_client_disconnected:
+    - script.execute: reset_display
+
+script:
+  - id: reset_display
+    then:
+      - if:
+          condition:
+            lambda: return !id(init_in_progress);
+          then:
+            - if:
+                condition:
+                  wifi.connected:
+                then:
+                  - if:
+                      condition:
+                        api.connected:
+                      then:
+                        - if:
+                            condition:
+                              voice_assistant.connected:
+                            then:
+                              - if:
+                                  condition:
+                                    switch.is_on: use_wake_word
+                                  then:
+                                    - display.page.show: idle_page
+                                    - component.update: s3_box_lcd
+                                  else:
+                                    - display.page.show: muted_page
+                                    - component.update: s3_box_lcd
+                            else:
+                              - display.page.show: no_pipeline_page
+                              - component.update: s3_box_lcd
+                      else:
+                        - display.page.show: no_api_page
+                        - component.update: s3_box_lcd
+                else:
+                  - display.page.show: no_wifi_page
+                  - component.update: s3_box_lcd
+
+switch:
+  - platform: template
+    name: Use wake word
+    id: use_wake_word
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+    on_turn_on:
+      - lambda: id(va).set_use_wake_word(true);
+      - if:
+          condition:
+            not:
+              - voice_assistant.is_running
+          then:
+            - voice_assistant.start_continuous
+      - script.execute: reset_display
+    on_turn_off:
+      - voice_assistant.stop
+      - lambda: id(va).set_use_wake_word(false);
+      - script.execute: reset_display
+
+globals:
+  - id: init_in_progress
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+
+image:
+  # Standard path IDLE > LISTENING > THINKING > REPLYING
+  - file: https://github.com/esphome/firmware/raw/main/voice-assistant/casita/Idle@2x.png
+    id: casita_idle
+    resize: 200x200
+    type: RGB24
+    use_transparency: true
+  - file: https://github.com/esphome/firmware/raw/main/voice-assistant/casita/Normal@2x.png
+    id: casita_listening
+    resize: 200x200
+    type: RGB24
+    use_transparency: true
+  - file: https://github.com/esphome/firmware/raw/main/voice-assistant/casita/Focusing@2x.png
+    id: casita_thinking
+    resize: 200x200
+    type: RGB24
+    use_transparency: true
+  - file: https://github.com/esphome/firmware/raw/main/voice-assistant/casita/Happy@2x.png
+    id: casita_replying
+    resize: 200x200
+    type: RGB24
+    use_transparency: true
+
+  # Error cases (More specific flies to come soon)
+  - file: https://github.com/esphome/firmware/raw/main/voice-assistant/casita/Error@2x.png
+    id: casita_error
+    resize: 200x200
+    type: RGB24
+    use_transparency: true
+
+  # Initialization illustration
+  - file: https://github.com/esphome/firmware/raw/main/voice-assistant/casita/Initializing@2x.png
+    id: casita_initializing
+    resize: 200x200
+    type: RGB24
+    use_transparency: true
+
+spi:
+  clk_pin: 7
+  mosi_pin: 6
+
+display:
+  - platform: ili9xxx
+    id: s3_box_lcd
+    model: S3BOX
+    data_rate: 40MHz
+    cs_pin: 5
+    dc_pin: 4
+    reset_pin:
+      number: 48
+      inverted: true
+    update_interval: never
+    pages:
+      - id: idle_page
+        lambda: |-
+          it.fill(Color::BLACK);
+          it.image((it.get_width() / 2) - 100, (it.get_height() / 2) - 100, id(casita_idle));
+      - id: listening_page
+        lambda: |-
+          it.fill(Color::WHITE);
+          it.image((it.get_width() / 2) - 100, (it.get_height() / 2) - 100, id(casita_listening));
+      - id: thinking_page
+        lambda: |-
+          it.fill(Color::WHITE);
+          it.image((it.get_width() / 2) - 100, (it.get_height() / 2) - 105, id(casita_thinking));
+      - id: replying_page
+        lambda: |-
+          it.fill(Color::WHITE);
+          it.image((it.get_width() / 2) - 100, (it.get_height() / 2) - 100, id(casita_replying));
+      - id: error_page
+        lambda: |-
+          it.fill(Color::BLACK);
+          it.image((it.get_width() / 2) - 100, (it.get_height() / 2) - 100, id(casita_error));
+      - id: no_api_page
+        lambda: |-
+          it.fill(Color::BLACK);
+          it.image((it.get_width() / 2) - 100, (it.get_height() / 2) - 100, id(casita_error));
+      - id: no_wifi_page
+        lambda: |-
+          it.fill(Color::BLACK);
+          it.image((it.get_width() / 2) - 100, (it.get_height() / 2) - 100, id(casita_error));
+      - id: no_pipeline_page
+        lambda: |-
+          it.fill(Color::BLACK);
+          it.image((it.get_width() / 2) - 100, (it.get_height() / 2) - 100, id(casita_error));
+      - id: initializing_page
+        lambda: |-
+          it.fill(Color::BLACK);
+          it.image((it.get_width() / 2) - 100, (it.get_height() / 2) - 100, id(casita_initializing));
+      - id: muted_page
+        lambda: |-
+          it.fill(Color::BLACK);
