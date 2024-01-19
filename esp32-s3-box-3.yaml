@@ -89,15 +89,15 @@ wifi:
   on_connect:
     - script.execute: draw_display
     - delay: 5s # Gives time for improv results to be transmitted
-#    - ble.disable:
+    - ble.disable:
   on_disconnect:
     - script.execute: draw_display
-#    - ble.enable:
+    - ble.enable:
 
-#improv_serial:
+improv_serial:
 
-#esp32_improv:
-#  authorizer: none
+esp32_improv:
+  authorizer: none
 
 button:
   - platform: factory_reset
@@ -194,8 +194,8 @@ voice_assistant:
         condition:
           switch.is_off: mute
         then:
-#          - wait_until:
-#              not: ble.enabled
+          - wait_until:
+              not: ble.enabled
           - voice_assistant.start_continuous:
           - lambda: id(voice_assistant_phase) = ${voice_assist_idle_phase_id};
         else:
